@@ -97,4 +97,5 @@ def detect_sun():
     })
 
 if __name__ == '__main__':
-    app.run(host='10.228.187.45', port=5000)
+    app.run(host='0.0.0.0', port=5000)
+    # app.run(host='10.228.187.45', port=5000)

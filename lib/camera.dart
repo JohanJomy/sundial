@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -8,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:http/http.dart' as http;
 // import 'api.dart';
+String aip_id = '192.168.43.45:5000';
 
 class CameraCapturePage extends StatefulWidget {
   const CameraCapturePage({super.key});
@@ -23,11 +25,14 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   Position? _position;
   double? _pitch;
   double? _roll;
-  double? _direction; // in degrees
+  double? _direction; 
   List<double>? _accelerometer;
   List<double>? _magnetometer;
   var data_init;
-  String data = "12:00";
+  
+  String data = "Click a picture!";
+
+  Uint8List? _annotatedImage;
 
   @override
   void initState() {
@@ -173,6 +178,16 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   }
 
   Future<void> _takePicture() async {
+    // If an annotated image is showing, pressing the button should remove it and restart the camera
+    if (_annotatedImage != null) {
+      setState(() {
+        _annotatedImage = null;
+        data = "Click a picture!";
+      });
+      await _initCamera();
+      return;
+    }
+
     if (_controller == null) return;
     try {
       await _initializeControllerFuture;
@@ -192,20 +207,95 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     final bytes = await File(imagePath).readAsBytes();
     final imgBase64 = base64Encode(bytes);
 
-    final response = await http.post(
-      Uri.parse('http://10.228.187.45:5000/detect_sun'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'image_base64': imgBase64}),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse('http://${aip_id}/detect_sun'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'image_base64': imgBase64}),
+      );
 
-    if (response.statusCode == 200) {
-      final result = jsonDecode(response.body);
-      // result['sun_detected'], result['center'], result['annotated_image_base64']
-      print("result: ${result['sun_detected']}");
-      // You can display result['annotated_image_base64'] as an image in Flutter
-    } else {
-      print('API error: ${response.body}');
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        // Handle result as needed
+        print("${result['sun_detected']}");
+        if (result['sun_detected'] == true) {
+          setState(() {
+            data = 'Time';
+            setImage(result['annotated_image_base64']);
+            calculateTime(result);
+          });
+        } else {
+          setState(() {
+            data = 'No sun Detected: Click another picture';
+          });
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Python server down')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Python server down')),
+      );
+      debugPrint('API error: $e');
     }
+  }
+
+  void calculateTime(Map result) {
+    if (_position == null || result['center'] == null) {
+      setState(() {
+        data = "Insufficient data for time calculation";
+      });
+      return;
+    }
+
+    final lat = _position!.latitude;
+    final lng = _position!.longitude;
+    final direction = _direction ?? 0.0;
+    final sunCenter = result['center'];
+
+    // Assume image width = 640, height = 480 (from server)
+    final imgWidth = 640.0;
+    final x = sunCenter[0];
+
+    // Map sun's horizontal position to time (sunrise ~6:00, sunset ~18:00)
+    // If facing South, left is East, right is West
+    // If facing North, left is West, right is East
+    double sunrise = 6.0;
+    double sunset = 18.0;
+
+    // Adjust for device direction: If facing North, swap sunrise/sunset
+    if (direction > 90 && direction < 270) {
+      // Facing North-ish
+      sunrise = 18.0;
+      sunset = 6.0;
+    }
+
+    // Calculate relative horizontal position
+    final relX = (x / imgWidth).clamp(0.0, 1.0);
+
+    // Interpolate time between sunrise and sunset
+    double solarTime = sunrise + (sunset - sunrise) * relX;
+
+    // Clamp to 0-23.99 hours
+    solarTime = solarTime.clamp(0, 23.99);
+    final hourInt = solarTime.floor();
+    final minute = ((solarTime - hourInt) * 60).round();
+
+    setState(() {
+      data = "${hourInt.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+      // data = "17:45";
+    });
+  }
+
+  void setImage(String base64Image) {
+    setState(() {
+      _annotatedImage = base64Decode(base64Image);
+      _controller?.dispose();
+      _controller = null;
+      _initializeControllerFuture = null;
+    });
   }
 
   String getDirectionLabel() {
@@ -257,25 +347,34 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
             child: Stack(
               alignment: Alignment.center,
               children: [
-                _initializeControllerFuture == null
-                    ? const Center(child: CircularProgressIndicator())
-                    : FutureBuilder(
-                        future: _initializeControllerFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.done) {
-                            final controller = _controller;
-                            if (controller == null || !controller.value.isInitialized) {
-                              return const Center(child: Text('Camera not available', style: TextStyle(color: Colors.white)));
+                // Show annotated image if available, else show camera preview
+                if (_annotatedImage != null)
+                  Image.memory(
+                    _annotatedImage!,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                  )
+                else
+                  (_initializeControllerFuture == null)
+                      ? const Center(child: CircularProgressIndicator())
+                      : FutureBuilder(
+                          future: _initializeControllerFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.done) {
+                              final controller = _controller;
+                              if (controller == null || !controller.value.isInitialized) {
+                                return const Center(child: Text('Camera not available', style: TextStyle(color: Colors.white)));
+                              }
+                              return CameraPreview(controller);
+                            } else if (snapshot.hasError) {
+                              return Center(
+                                child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)),
+                              );
                             }
-                            return CameraPreview(controller);
-                          } else if (snapshot.hasError) {
-                            return Center(
-                              child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)),
-                            );
-                          }
-                          return const Center(child: CircularProgressIndicator());
-                        },
-                      ),
+                            return const Center(child: CircularProgressIndicator());
+                          },
+                        ),
                 // Add this widget for "12:00" text at the top
                 Positioned(
                   top: 24,
@@ -284,6 +383,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                   child: Center(
                     child: Text(
                       data,
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 32,
