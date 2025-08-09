@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'dart:math';
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:http/http.dart' as http;
+// import 'api.dart';
 
 class CameraCapturePage extends StatefulWidget {
   const CameraCapturePage({super.key});
@@ -22,6 +26,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   double? _direction; // in degrees
   List<double>? _accelerometer;
   List<double>? _magnetometer;
+  var data_init;
+  String data = "12:00";
 
   @override
   void initState() {
@@ -136,8 +142,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         enableAudio: false,
         imageFormatGroup: ImageFormatGroup.jpeg,
       );
+      await controller.initialize();
+      await controller.setFlashMode(FlashMode.off); // <-- Ensure flash is off
       _controller = controller;
-      _initializeControllerFuture = controller.initialize();
+      _initializeControllerFuture = Future.value();
       setState(() {});
     } catch (e) {
       debugPrint('Camera init error: $e');
@@ -170,12 +178,33 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       await _initializeControllerFuture;
       if (!_controller!.value.isInitialized || _controller!.value.isTakingPicture) return;
       final file = await _controller!.takePicture();
-      // Removed: await GallerySaver.saveImage(file.path); // Save to gallery
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Picture taken')),
       );
+      await uploadImageToApi(file.path); // <-- Upload to API
     } catch (e) {
       debugPrint('Take picture error: $e');
+    }
+  }
+
+  // Call this after taking the picture
+  Future<void> uploadImageToApi(String imagePath) async {
+    final bytes = await File(imagePath).readAsBytes();
+    final imgBase64 = base64Encode(bytes);
+
+    final response = await http.post(
+      Uri.parse('http://10.228.187.45:5000/detect_sun'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'image_base64': imgBase64}),
+    );
+
+    if (response.statusCode == 200) {
+      final result = jsonDecode(response.body);
+      // result['sun_detected'], result['center'], result['annotated_image_base64']
+      print("result: ${result['sun_detected']}");
+      // You can display result['annotated_image_base64'] as an image in Flutter
+    } else {
+      print('API error: ${response.body}');
     }
   }
 
@@ -208,7 +237,19 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(title: const Text('Camera')),
+      appBar: AppBar(
+        centerTitle: true,
+        title: const Text(
+          'Sun Dial',
+          style: TextStyle(
+            fontWeight: FontWeight.bold, // <-- Make title bold
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
       body: Column(
         children: [
           // Camera preview with button overlay
@@ -235,13 +276,36 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                           return const Center(child: CircularProgressIndicator());
                         },
                       ),
+                // Add this widget for "12:00" text at the top
+                Positioned(
+                  top: 24,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Text(
+                      data,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        shadows: [
+                          Shadow(
+                            blurRadius: 4,
+                            color: Colors.black54,
+                            offset: Offset(2, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 // Camera button overlay
                 Positioned(
                   bottom: 45,
                   child: FloatingActionButton(
-                    backgroundColor: Colors.white,
+                    backgroundColor: Colors.black,
                     onPressed: _takePicture,
-                    child: const Icon(Icons.camera, color: Colors.black),
+                    child: const Icon(Icons.camera, color: Colors.white),
                   ),
                 ),
               ],

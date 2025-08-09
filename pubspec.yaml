@@ -15,6 +15,7 @@ dependencies:
   permission_handler: ^11.3.0
   geolocator: ^11.0.0
   sensors_plus: ^4.0.2
+  http: 
 
 dev_dependencies:
   flutter_test:
