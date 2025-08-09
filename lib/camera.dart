@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'dart:math';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -17,11 +15,13 @@ class CameraCapturePage extends StatefulWidget {
 class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindingObserver {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
-  XFile? _lastPicture;
   bool _isCameraPermissionGranted = false;
   Position? _position;
   double? _pitch;
   double? _roll;
+  double? _direction; // in degrees
+  List<double>? _accelerometer;
+  List<double>? _magnetometer;
 
   @override
   void initState() {
@@ -29,23 +29,74 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     WidgetsBinding.instance.addObserver(this);
     _setup();
     _getLocation();
+
     accelerometerEvents.listen((event) {
-      // Calculate pitch and roll from accelerometer data
-      final ax = event.x;
-      final ay = event.y;
-      final az = event.z;
-      final pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180 / pi;
-      final roll = atan2(ay, az) * 180 / pi;
       setState(() {
+        _accelerometer = [event.x, event.y, event.z];
+        final ax = event.x;
+        final ay = event.y;
+        final az = event.z;
+        final pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180 / pi;
+        final roll = atan2(ay, az) * 180 / pi;
         _pitch = pitch;
         _roll = roll;
       });
+      _updateAzimuth();
     });
+
+    magnetometerEvents.listen((event) {
+      setState(() {
+        _magnetometer = [event.x, event.y, event.z];
+      });
+      _updateAzimuth();
+    });
+  }
+
+  void _updateAzimuth() {
+    if (_accelerometer != null && _magnetometer != null) {
+      final ax = _accelerometer![0];
+      final ay = _accelerometer![1];
+      final az = _accelerometer![2];
+      final mx = _magnetometer![0];
+      final my = _magnetometer![1];
+      final mz = _magnetometer![2];
+
+      // Normalize accelerometer vector
+      final normA = sqrt(ax * ax + ay * ay + az * az);
+      final axn = ax / normA;
+      final ayn = ay / normA;
+      final azn = az / normA;
+
+      // Normalize magnetometer vector
+      final normM = sqrt(mx * mx + my * my + mz * mz);
+      final mxn = mx / normM;
+      final myn = my / normM;
+      final mzn = mz / normM;
+
+      // Calculate horizontal component of magnetic field
+      final hx = myn * azn - mzn * ayn;
+      final hy = mzn * axn - mxn * azn;
+
+      // Calculate azimuth (compass heading)
+      double azimuth = atan2(hy, hx) * 180 / pi;
+      if (azimuth < 0) azimuth += 360;
+      setState(() {
+        _direction = azimuth;
+      });
+    }
   }
 
   Future<void> _getLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
+    if (!serviceEnabled) {
+      // Ask user to turn on location
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enable location services (GPS)')),
+        );
+      }
+      return;
+    }
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -119,10 +170,26 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       await _initializeControllerFuture;
       if (!_controller!.value.isInitialized || _controller!.value.isTakingPicture) return;
       final file = await _controller!.takePicture();
-      setState(() => _lastPicture = file);
+      // Removed: await GallerySaver.saveImage(file.path); // Save to gallery
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Picture taken')),
+      );
     } catch (e) {
       debugPrint('Take picture error: $e');
     }
+  }
+
+  String getDirectionLabel() {
+    if (_direction == null) return '';
+    final deg = _direction!;
+    if (deg >= 337.5 || deg < 22.5) return 'North';
+    if (deg >= 22.5 && deg < 67.5) return 'North-East';
+    if (deg >= 67.5 && deg < 112.5) return 'East';
+    if (deg >= 112.5 && deg < 157.5) return 'South-East';
+    if (deg >= 157.5 && deg < 202.5) return 'South';
+    if (deg >= 202.5 && deg < 247.5) return 'South-West';
+    if (deg >= 247.5 && deg < 292.5) return 'West';
+    return 'North-West';
   }
 
   @override
@@ -205,31 +272,16 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                     style: const TextStyle(color: Colors.yellow, fontSize: 16),
                   ),
                 ),
-                if (_lastPicture != null)
-                  Row(
-                    children: [
-                      Image.file(File(_lastPicture!.path), height: 40),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _lastPicture!.path.split('/').last,
-                          style: const TextStyle(color: Colors.white),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.open_in_new, color: Colors.white),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => Dialog(
-                              child: Image.file(File(_lastPicture!.path)),
-                            ),
-                          );
-                        },
-                      )
-                    ],
+                
+                Center(
+                  child: Text(
+                    _direction != null
+                        ? 'Direction: ${getDirectionLabel()} (${_direction!.toStringAsFixed(0)}°)'
+                        : 'Direction: Unknown',
+                    style: const TextStyle(color: Colors.cyan, fontSize: 18),
                   ),
+                ),
+                
               ],
             ),
           ),
