@@ -9,7 +9,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:http/http.dart' as http;
 // import 'api.dart';
-String aip_id = '192.168.43.45:5000';
+
+String aipId = 'http://10.72.103.45:5000';
 
 class CameraCapturePage extends StatefulWidget {
   const CameraCapturePage({super.key});
@@ -209,7 +210,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
     try {
       final response = await http.post(
-        Uri.parse('http://${aip_id}/detect_sun'),
+        Uri.parse('${aipId}detect_sun'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'image_base64': imgBase64}),
       );
@@ -250,14 +251,15 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       return;
     }
 
-    final lat = _position!.latitude;
-    final lng = _position!.longitude;
     final direction = _direction ?? 0.0;
     final sunCenter = result['center'];
 
-    // Assume image width = 640, height = 480 (from server)
+    // Assume image width = 640 (from server)
     final imgWidth = 640.0;
     final x = sunCenter[0];
+
+    // Calculate relative horizontal position
+    final relX = (x / imgWidth).clamp(0.0, 1.0);
 
     // Map sun's horizontal position to time (sunrise ~6:00, sunset ~18:00)
     // If facing South, left is East, right is West
@@ -265,28 +267,26 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     double sunrise = 6.0;
     double sunset = 18.0;
 
-    // Adjust for device direction: If facing North, swap sunrise/sunset
+    // Invert time mapping if facing North-ish
     if (direction > 90 && direction < 270) {
-      // Facing North-ish
-      sunrise = 18.0;
-      sunset = 6.0;
+      // Facing North-ish: invert the mapping
+      double solarTime = sunset - (sunset - sunrise) * relX;
+      solarTime = solarTime.clamp(0, 23.99);
+      final hourInt = solarTime.floor();
+      final minute = ((solarTime - hourInt) * 60).round();
+      setState(() {
+        data = "${hourInt.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+      });
+    } else {
+      // Facing South-ish: normal mapping
+      double solarTime = sunrise + (sunset - sunrise) * relX;
+      solarTime = solarTime.clamp(0, 23.99);
+      final hourInt = solarTime.floor();
+      final minute = ((solarTime - hourInt) * 60).round();
+      setState(() {
+        data = "${hourInt.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
+      });
     }
-
-    // Calculate relative horizontal position
-    final relX = (x / imgWidth).clamp(0.0, 1.0);
-
-    // Interpolate time between sunrise and sunset
-    double solarTime = sunrise + (sunset - sunrise) * relX;
-
-    // Clamp to 0-23.99 hours
-    solarTime = solarTime.clamp(0, 23.99);
-    final hourInt = solarTime.floor();
-    final minute = ((solarTime - hourInt) * 60).round();
-
-    setState(() {
-      data = "${hourInt.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}";
-      // data = "17:45";
-    });
   }
 
   void setImage(String base64Image) {
@@ -315,11 +315,28 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   Widget build(BuildContext context) {
     if (!_isCameraPermissionGranted) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Camera')),
+        backgroundColor: Colors.black, // <-- Make page black
+        appBar: AppBar(
+          centerTitle: true,
+          title: const Text(
+            'Sun Dial',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
         body: Center(
           child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black, // <-- Button background black
+              foregroundColor: Colors.white, // <-- Button text white
+            ),
             onPressed: _requestPermission,
-            child: const Text('Grant Camera Permission'),
+            child: const Text('Enable Camera'),
           ),
         ),
       );
@@ -364,12 +381,20 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                             if (snapshot.connectionState == ConnectionState.done) {
                               final controller = _controller;
                               if (controller == null || !controller.value.isInitialized) {
-                                return const Center(child: Text('Camera not available', style: TextStyle(color: Colors.white)));
+                                // Show black screen instead of error
+                                return Container(
+                                  color: Colors.black,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                );
                               }
                               return CameraPreview(controller);
                             } else if (snapshot.hasError) {
-                              return Center(
-                                child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)),
+                              // Show black screen instead of error
+                              return Container(
+                                color: Colors.black,
+                                width: double.infinity,
+                                height: double.infinity,
                               );
                             }
                             return const Center(child: CircularProgressIndicator());
@@ -377,7 +402,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                         ),
                 // Add this widget for "12:00" text at the top
                 Positioned(
-                  top: 24,
+                  top: 35,
                   left: 0,
                   right: 0,
                   child: Center(
