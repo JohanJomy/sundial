@@ -1,12 +1,9 @@
 
 
-<img src="./assests/banner.png" width="3188" height="1202"><br>
-<em>Useless Projects 2.0 Banner</em>
-
+<img src="./assests/banner.png" width="3188" height="1202">
 
 # Sun Dial
-
-## Basic Details
+<img src="./assests/icon.png">
 
 ### Team Name
 Chumma Oru Team
@@ -108,8 +105,4 @@ You're ready to start using Sun Dial! Enjoy finding the time using your phone's 
 
 Screenshots will be added soon—once we get some sunny images during the daytime!
 
----
-
-## Disclaimer
-
-This app is for fun and educational purposes. It is not a replacement for a real
+<img src="./assests/ss1.jpg">
