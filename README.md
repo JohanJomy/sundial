@@ -112,4 +112,4 @@ Screenshots will be added soon—once we get some sunny images during the daytim
 
 ## Note
 
-Due to testing limitations during the hackathon day (i.e., cloudy sky and the sun setting by the time the project was complete), we couldn't test the app properly. Therefore, the calculate time function was iteratively improved for better accuracy throughout the development process. The final implementation incorporates advanced solar positioning algorithms that account for device orientation, geographic location, and sun elevation for the most precise time calculation possible.
+Due to testing limitations during the hackathon (cloudy weather and sunset before completion), the app could not be fully tested. The time calculation function can be refined for greater accuracy by incorporating advanced solar positioning algorithms that factor in device orientation, location, and sun elevation. Time constraints prevented this in the current version.
