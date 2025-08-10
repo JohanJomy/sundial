@@ -1,9 +1,10 @@
-
-
 <img src="./assests/banner.png" width="3188" height="1202">
 
 # Sun Dial
-<img src="./assests/icon.png">
+
+<p align="center">
+   <img src="./assests/icon.png">
+</p>
 
 ### Team Name
 Chumma Oru Team
@@ -14,6 +15,8 @@ Chumma Oru Team
 
 ### Project Description
 Sun Dial is a fun and experimental app that tells the time using the position of the sun captured by your phone’s camera. The app calculates the azimuth angle by considering the direction the phone is facing, latitude, longitude, and the phone’s tilt (pitch and roll). The frontend is built with Flutter and Dart, while the backend uses Python and OpenCV for sun detection. Communication between Dart and Python is handled via a Flask API.
+
+<img src="./assests/Idea.jpg">
 
 ### The Problem (That Doesn't Exist)
 It's apparently "too hard" to check the time using your phone or watch, since you have to raise your hand.
@@ -106,3 +109,7 @@ You're ready to start using Sun Dial! Enjoy finding the time using your phone's 
 Screenshots will be added soon—once we get some sunny images during the daytime!
 
 <img src="./assests/ss1.jpg">
+
+## Note
+
+Due to testing limitations during the hackathon day (i.e., cloudy sky and the sun setting by the time the project was complete), we couldn't test the app properly. Therefore, the calculate time function was iteratively improved for better accuracy throughout the development process. The final implementation incorporates advanced solar positioning algorithms that account for device orientation, geographic location, and sun elevation for the most precise time calculation possible.
